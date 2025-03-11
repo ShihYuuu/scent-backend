@@ -90,5 +90,51 @@ def add_user():
     conn.close()
     return jsonify({"message": "User added successfully!"})
 
+@app.route("/api/login", methods=["POST"])
+def login():
+    # 解析前端傳來的 JSON
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+
+    # 檢查 email 和 password 是否存在
+    if not email or not password:
+        return jsonify({"error": "Missing email or password"}), 400
+
+    # 連接 MySQL
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+
+    try:
+        with conn.cursor() as cursor:
+            # 查詢使用者資料
+            sql = "SELECT id, name, password FROM users WHERE email = %s"
+            cursor.execute(sql, (email,))
+            user = cursor.fetchone()
+
+        # 如果使用者不存在
+        if not user:
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        # 檢查密碼是否正確（假設密碼是純文字，未加密）
+        stored_password = user["password"]  # ⚠️ 這裡應該使用 Hash 儲存密碼
+        if password != stored_password:
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        # 產生 JWT Token（有效時間 1 小時）
+        access_token = create_access_token(
+            identity={"id": user["id"], "name": user["name"], "email": email},
+            expires_delta=datetime.timedelta(hours=1)
+        )
+
+        return jsonify({"message": "Login successful", "token": access_token})
+
+    except pymysql.MySQLError as e:
+        return jsonify({"error": f"Database error: {e}"}), 500
+
+    finally:
+        conn.close()
+
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
