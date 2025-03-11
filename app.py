@@ -1,15 +1,13 @@
 import os
 import pymysql
 import datetime
-import logging
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token
 from db import get_db_connection
 from dotenv import load_dotenv
-
-from logging.handlers import TimedRotatingFileHandler
+from log_config import logger 
 
 load_dotenv()
 
@@ -23,44 +21,28 @@ jwt = JWTManager(app)
 
 CORS(app) 
 
-# LOGS
-log_dir = "logs"
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-
-log_filename = os.path.join(log_dir, f"{datetime.datetime.now().strftime('%Y-%m-%d')}.log")
-
-# 設定 Logging
-log_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7, encoding="utf-8")
-log_handler.setLevel(logging.INFO)  # 記錄 INFO 以上的請求
-log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-log_handler.setFormatter(log_formatter)
-
-# 設定 Flask Logger
-app.logger.addHandler(log_handler)
-app.logger.setLevel(logging.INFO)
-
-# 記錄所有 POST 請求（包含時間、IP、URL、請求 Body）
-@app.before_request
-def log_post_requests():
+@app.after_request
+def log_request_response(response):
     if request.method == "POST":
         log_data = {
-            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "ip": request.remote_addr,
             "method": request.method,
             "url": request.path,
             "headers": dict(request.headers),
-            "body": request.get_json(silent=True),  # 避免非 JSON 請求報錯
+            "request_body": request.get_json(silent=True),  # 避免非 JSON 請求報錯
+            "status_code": response.status_code,
+            "response_body": response.get_json(silent=True)  # 取得回應 JSON
         }
-        app.logger.info(f"POST request: {log_data}")
+        logger.info(f"POST: {log_data}")
+    return response
 
 # 記錄所有錯誤
 @app.errorhandler(Exception)
 def handle_exception(e):
-    app.logger.error(f"Error: {e}", exc_info=True)
+    logger.error(f"Error: {e}", exc_info=True)
     return jsonify({"error": "Internal Server Error"}), 500
 
-# 測試 API（模擬 POST）
+# log test API
 @app.route("/api/test", methods=["POST"])
 def test_post():
     data = request.get_json()
